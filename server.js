@@ -2,6 +2,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import Messages from './dbMessages.js';
+import Chats from './dbChat.js';
 import Pusher from 'pusher';
 import cors from 'cors';
 
@@ -44,11 +45,13 @@ db.once('open', () => {
         if (change.operationType === 'insert') {
             const messageDetails = change.fullDocument;
             pusher.trigger('messages', 'inserted', {
-                name: messageDetails.name,
                 message: messageDetails.message,
+                senderId: messageDetails.senderId,
+                senderName: messageDetails.senderName,
                 timestamp: messageDetails.timestamp,
-                received: messageDetails.received,
-                roomId: messageDetails.roomId
+                roomId: messageDetails.roomId,
+                receiverId: messageDetails.receiverId,
+                receiverName: messageDetails.receiverName
             })
         } else {
             console.log('Error triggering Pusher')
@@ -71,8 +74,85 @@ app.get('/messages/sync', (req, res) => {
     }) 
 })
 
+app.get('/messages/sync/:id', (req, res) => {
+    const id = req.params.id,
+        sort = {timestamp: -1},
+        body = {chatKeys: []}
+        
+
+    Messages.find({$or: [{senderId: id}, {receiverId: id}]}).sort(sort).exec((err, data) => {
+        if (err) {
+            res.status(500).send(err);
+        } else {
+            data.forEach(msg => {
+                const chatId = msg.chatId;
+                if (!chatId) {
+                    return;
+                }
+                if (!!body[chatId]) {
+                    body[chatId].push(msg)
+                } else {
+                    body[chatId] = [msg]
+                    body.chatKeys.push(chatId)
+                }
+            })
+            res.status(200).send(body);
+        }
+    })
+})
+
+app.get('/messages/:chatId', (req, res) => {
+    const chatId = req.params.chatId,
+        sort = {timestamp: -1}
+        
+
+    Messages.find({chatId: chatId}).sort(sort).exec((err, data) => {
+        if (err) {
+            res.status(500).send(err);
+        } else {
+            res.status(200).send(data);
+        }
+    })
+})
+
+
+app.get('/chats/:userId', (req, res) => {
+    const userId = req.params.userId
+
+    Chats.find({chatUserIds: userId}, (err, data) => {
+        if (err) {
+            res.status(500).send(err);
+        } else {
+            res.status(200).send(data);
+        }
+    })
+    /*const id = req.params.id
+
+    Chats.find({chatId: id}, (err, data) => {
+        if (err) {
+            res.status(500).send(err);
+        } else {
+            res.status(200).send(data[0]);
+        }
+    })*/
+})
+
+app.post('/chats/', (req, res) => {
+    const dbChat = req.body
+    console.log(dbChat)
+
+    Chats.create(dbChat, (err, data) => {
+        if (err) {
+            res.status(500).send(err);
+        } else {
+            res.status(201).send(data);
+        }
+    })
+})
+
 app.post('/messages/new', (req, res) => {
     const dbMessage = req.body;
+    console.log(dbMessage);
 
     Messages.create(dbMessage, (err, data) => {
         if (err) {
